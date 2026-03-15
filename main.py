@@ -8,7 +8,7 @@ import datetime as dt
 
 from aiohttp import ClientSession
 from client_middleware_xdigest_auth import XdigestAuthMiddleware
-from FroniusTimeOfUse import FroniusTimeOfUseContainer, FroniusScheduleTypeEnum, WorkdayEnum
+from FroniusTimeOfUse import FroniusTimeOfUseContainer, FroniusScheduleTypeEnum, WorkdayEnum, TimeOfUse
 
 async def main():
     url = "http://192.168.178.180"
@@ -33,7 +33,7 @@ async def main():
 
         payload_no_timeofuse = '{"timeofuse":[]}'
 
-        newTimeOfUse = FroniusTimeOfUseContainer.TimeOfUse(
+        newTimeOfUse = TimeOfUse(
             Active=True,
             Power=1100,
             ScheduleType=FroniusScheduleTypeEnum.CHARGE_MAX,
@@ -47,7 +47,7 @@ async def main():
         if numRemoved > 0:
             print(f"Removed {numRemoved} entries matching criteria.")
 
-        payload_charge = timeOfUseCont.getTimeOfUseDict()
+        payload_charge = timeOfUseCont.getJson()
  
         async with session.post(url + "/api/config/timeofuse", json=payload_charge) as resp:
             txt = await resp.text()

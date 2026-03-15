@@ -1,8 +1,10 @@
+
 import json
 import datetime as dt
 from attr import dataclass
 from enum import StrEnum, IntFlag, auto
 from typing import Optional
+from copy import copy
 
 
 class StrUpperEnum(StrEnum):
@@ -29,30 +31,18 @@ class WorkdayEnum(IntFlag):
         SUNDAY = auto()
 
 
-class FroniusTimeOfUseContainer:
-    """This class manages the time of use configuration for a Fronius inverter.
-      It provides methods to read the current configuration and update it as needed."""
-    
-    @dataclass(frozen=False)
-    class TimeOfUse:
-        Active: bool = False
-        Power: int = 0
-        ScheduleType: FroniusScheduleTypeEnum = FroniusScheduleTypeEnum.UNKNOWN
-        Start: dt.time = dt.time(0, 0)  # Default to 00:00
-        End: dt.time = dt.time(0, 0)    # Default to 00:00
-        Workdays: WorkdayEnum = WorkdayEnum.NONE  # No days active by default      
+@dataclass(frozen=False)
+class TimeOfUse:
+    Active: bool = False
+    Power: int = 0
+    ScheduleType: FroniusScheduleTypeEnum = FroniusScheduleTypeEnum.UNKNOWN
+    Start: dt.time = dt.time(0, 0)  # Default to 00:00
+    End: dt.time = dt.time(0, 0)    # Default to 00:00
+    Workdays: WorkdayEnum = WorkdayEnum.NONE  # No days active by default      
 
-    _timeofuse : list[TimeOfUse] = []
 
-    def __init__(self, parseFronius: Optional[dict] = None):
-        """Initializes the manager with an optional parsed Fronius configuration."""
-        _timeofuse = []
-        if parseFronius is not None:
-            self.parseConfig(parseFronius)
-
- 
     @staticmethod
-    def parseTimeOfUse(config: dict) -> TimeOfUse:
+    def parse(config: dict) -> 'TimeOfUse':
         """Parses a single time of use entry from the Fronius configuration format."""
         try:
             schedule_type = FroniusScheduleTypeEnum[config["ScheduleType"].upper()]
@@ -68,7 +58,7 @@ class FroniusTimeOfUseContainer:
             workdays |= WorkdayEnum.SATURDAY if weekdays.get("Sat", False) else WorkdayEnum.NONE
             workdays |= WorkdayEnum.SUNDAY if weekdays.get("Sun", False) else WorkdayEnum.NONE
 
-            return FroniusTimeOfUseContainer.TimeOfUse(
+            return TimeOfUse(
                 Active = config["Active"],
                 Power = config["Power"],
                 ScheduleType = schedule_type,
@@ -78,40 +68,75 @@ class FroniusTimeOfUseContainer:
             )
         except (KeyError, ValueError) as e:
             raise ValueError(f"Invalid time of use configuration: {e}")
-        
 
-    @staticmethod
-    def overlapsTimeOfUse(entry1: TimeOfUse, entry2: TimeOfUse) -> bool:
-        """Checks if two time of use entries overlap in time and active days."""
-        if entry1.ScheduleType != entry2.ScheduleType:
+
+    def overlaps(self, otherTimeOfUse: 'TimeOfUse') -> bool:
+        """Determines if this time of use entry overlaps with another entry of the same schedule type."""
+        if self.ScheduleType != otherTimeOfUse.ScheduleType:
             return False  # Different schedule types do not overlap
-        if entry1.Workdays & entry2.Workdays == WorkdayEnum.NONE:
+        if self.Workdays & otherTimeOfUse.Workdays == WorkdayEnum.NONE:
             return False  # No overlapping active days
-        if entry1.Start >= entry1.End or entry2.Start >= entry2.End:
+        if self.Start >= self.End or otherTimeOfUse.Start >= otherTimeOfUse.End:
             return False  # Invalid time ranges do not overlap
-        return (entry1.Start < entry2.End) and (entry2.Start < entry1.End)  # Check time overlap
-        
+        return (self.Start < otherTimeOfUse.End) and (otherTimeOfUse.Start < self.End)  # Check time overlap
 
-    @staticmethod
-    def validateTimeOfUse(entry: TimeOfUse) -> bool:
+
+    def validate(self) -> bool:
         """Validates a time of use entry to ensure it meets expected criteria."""
-        if entry.ScheduleType == FroniusScheduleTypeEnum.UNKNOWN:
+        if self.ScheduleType == FroniusScheduleTypeEnum.UNKNOWN:
             return False  # Schedule type must be known
-        if not isinstance(entry.Power, int) or entry.Power < 0:
+        if not isinstance(self.Power, int) or self.Power < 0:
             return False  # Power must be a non-negative integer
-        if entry.Start >= entry.End:
+        if self.Start >= self.End:
             return False  # Start time must be before end time
-        if entry.Workdays == WorkdayEnum.NONE:
+        if self.Workdays == WorkdayEnum.NONE:
             return False  # At least one weekday must be active
         return True
     
+    
+    def getJson(self) -> dict:
+        """Returns a JSON-serializable dictionary representation of this time of use entry."""
+        return {
+            "Active": self.Active,
+            "Power": self.Power,
+            "ScheduleType": self.ScheduleType.value.upper(),
+            "TimeTable": {
+                "Start": self.Start.strftime("%H:%M"),
+                "End": self.End.strftime("%H:%M")
+            },
+            "Weekdays": {
+                "Mon": bool(self.Workdays & WorkdayEnum.MONDAY),
+                "Tue": bool(self.Workdays & WorkdayEnum.TUESDAY),
+                "Wed": bool(self.Workdays & WorkdayEnum.WEDNESDAY),
+                "Thu": bool(self.Workdays & WorkdayEnum.THURSDAY),
+                "Fri": bool(self.Workdays & WorkdayEnum.FRIDAY),
+                "Sat": bool(self.Workdays & WorkdayEnum.SATURDAY),
+                "Sun": bool(self.Workdays & WorkdayEnum.SUNDAY)
+            }
+        }
+
+
+
+class FroniusTimeOfUseContainer:
+    """This class manages the time of use configuration for a Fronius inverter.
+      It provides methods to read the current configuration and update it as needed."""
+
+    _timeofuse : list[TimeOfUse] = []
+
+
+    def __init__(self, parseFronius: Optional[dict] = None):
+        """Initializes the manager with an optional parsed Fronius configuration."""
+        _timeofuse = []
+        if parseFronius is not None:
+            self.parseConfig(parseFronius)    
+
 
     def parseConfig(self, config: dict):
         """Parses the entire time of use configuration from the Fronius format."""
 
         if "ScheduleType" in config:
             try:
-                tou_entry = FroniusTimeOfUseContainer.parseTimeOfUse(config)
+                tou_entry = TimeOfUse.parse(config)
                 self.addEntry(tou_entry)
             except ValueError as e:
                 print(f"Skipping invalid time of use entry: {e}")
@@ -119,7 +144,7 @@ class FroniusTimeOfUseContainer:
         if "timeofuse" in config:
             for c in config["timeofuse"]:
                 try:
-                    tou_entry = FroniusTimeOfUseContainer.parseTimeOfUse(c)
+                    tou_entry = TimeOfUse.parse(c)
                     self.addEntry(tou_entry)
                 except ValueError as e:
                     print(f"Skipping invalid time of use entry: {e}")
@@ -128,7 +153,7 @@ class FroniusTimeOfUseContainer:
     def overlapsWithExistingEntry(self, entry: TimeOfUse) -> bool:
         """Checks if the given time of use entry overlaps with any existing entries of the same schedule type."""
         for existing in self._timeofuse:
-            if self.overlapsTimeOfUse(entry, existing):
+            if existing.overlaps(entry):
                 return True
         return False
        
@@ -137,7 +162,9 @@ class FroniusTimeOfUseContainer:
                               startTime: dt.time, endTime: dt.time) -> tuple[int, list[TimeOfUse]]:
         collectedRemove : list[FroniusTimeOfUseContainer.TimeOfUse] = []
         for existing in self._timeofuse:
-            dummyTimeOfUse = self.TimeOfUse(ScheduleType=schedule_type, Workdays=workdays, Start=startTime, End=endTime)
+            dummyTimeOfUse = TimeOfUse(ScheduleType=schedule_type, Workdays=workdays, Start=startTime, End=endTime)
+            if not dummyTimeOfUse.validate():
+                raise ValueError("Invalid criteria for removing time of use entry.")
             if self.overlapsWithExistingEntry(dummyTimeOfUse):
                 collectedRemove.append(existing)
                 self._timeofuse.remove(existing)
@@ -146,9 +173,7 @@ class FroniusTimeOfUseContainer:
 
     def addEntry(self, entry: TimeOfUse) -> None:
         """Adds a new time of use entry to the configuration."""
-        if not isinstance(entry, self.TimeOfUse):
-            raise ValueError("Entry must be an instance of TimeOfUse dataclass.")
-        if not self.validateTimeOfUse(entry):
+        if not entry.validate():
             raise ValueError("Invalid time of use entry.")
         if self.overlapsWithExistingEntry(entry):
             raise ValueError("New entry overlaps with existing entries of the same schedule type.")
@@ -158,12 +183,6 @@ class FroniusTimeOfUseContainer:
     def addOrReplaceEntry(self, entry: TimeOfUse) -> tuple[int, list[TimeOfUse]]:
         """Adds a new time of use entry, replacing any existing entries that overlap with it.
            Returns the number of entries that were removed to accommodate the new entry."""
-        
-        if not isinstance(entry, self.TimeOfUse):
-            raise ValueError("Entry must be an instance of TimeOfUse dataclass.")
-        if not self.validateTimeOfUse(entry):
-            raise ValueError("Invalid time of use entry.")
-        
         # Remove overlapping entries
         rm_ret = self.removeEntry(schedule_type=entry.ScheduleType, workdays=entry.Workdays, startTime=entry.Start, endTime=entry.End)
         
@@ -173,38 +192,24 @@ class FroniusTimeOfUseContainer:
         return rm_ret  # Return the number of entries that were removed
 
 
-    def getTimeOfUseCopy(self, timeOfUseOverlap: Optional[TimeOfUse] = None) -> list[TimeOfUse]:
+    def getCopy(self, timeOfUseOverlap: Optional[TimeOfUse] = None) -> list[TimeOfUse]:
         """Returns a list of the current time of use entries."""
         if timeOfUseOverlap is not None:
-            return [entry for entry in self._timeofuse if self.overlapsTimeOfUse(entry, timeOfUseOverlap)]
+            return [copy(entry) for entry in self._timeofuse if entry.overlaps(timeOfUseOverlap)]
         return self._timeofuse.copy()
 
 
-    def getTimeOfUseDict(self) -> dict:
+    def getJson(self) -> dict:
+        """
+        Returns a JSON-serializable dictionary representation of the entire time of use configuration.
+        """
         return {
             "timeofuse": [
-                {
-                    "Active": entry.Active,
-                    "Power": entry.Power,
-                    "ScheduleType": entry.ScheduleType.value.upper(),
-                    "TimeTable": {
-                        "Start": entry.Start.strftime("%H:%M"),
-                        "End": entry.End.strftime("%H:%M")
-                    },
-                    "Weekdays": {
-                        "Mon": bool(entry.Workdays & WorkdayEnum.MONDAY),
-                        "Tue": bool(entry.Workdays & WorkdayEnum.TUESDAY),
-                        "Wed": bool(entry.Workdays & WorkdayEnum.WEDNESDAY),
-                        "Thu": bool(entry.Workdays & WorkdayEnum.THURSDAY),
-                        "Fri": bool(entry.Workdays & WorkdayEnum.FRIDAY),
-                        "Sat": bool(entry.Workdays & WorkdayEnum.SATURDAY),
-                        "Sun": bool(entry.Workdays & WorkdayEnum.SUNDAY)
-                    }
-                } for entry in self._timeofuse
+                entry.getJson() for entry in self._timeofuse
             ]
         }
 
 
     def __str__(self):
-        return json.dumps(self.getTimeOfUseDict(), indent=2)
+        return json.dumps(self.getJson(), indent=2)
     
