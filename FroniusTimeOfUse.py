@@ -160,7 +160,7 @@ class FroniusTimeOfUseContainer:
 
     def removeEntry(self, schedule_type: FroniusScheduleTypeEnum, workdays: WorkdayEnum,
                               startTime: dt.time, endTime: dt.time) -> tuple[int, list[TimeOfUse]]:
-        collectedRemove : list[FroniusTimeOfUseContainer.TimeOfUse] = []
+        collectedRemove : list[TimeOfUse] = []
         for existing in self._timeofuse:
             dummyTimeOfUse = TimeOfUse(ScheduleType=schedule_type, Workdays=workdays, Start=startTime, End=endTime)
             if not dummyTimeOfUse.validate():
@@ -192,10 +192,10 @@ class FroniusTimeOfUseContainer:
         return rm_ret  # Return the number of entries that were removed
 
 
-    def getCopy(self, timeOfUseOverlap: Optional[TimeOfUse] = None) -> list[TimeOfUse]:
+    def getCopy(self, timeOfUseOverlap: Optional[TimeOfUse] = None, includeOverlap: bool = True) -> list[TimeOfUse]:
         """Returns a list of the current time of use entries."""
         if timeOfUseOverlap is not None:
-            return [copy(entry) for entry in self._timeofuse if entry.overlaps(timeOfUseOverlap)]
+            return [copy(entry) for entry in self._timeofuse if entry.overlaps(timeOfUseOverlap) == includeOverlap]
         return self._timeofuse.copy()
 
 
