@@ -9,13 +9,11 @@ import datetime as dt
 from aiohttp import ClientSession
 from client_middleware_xdigest_auth import XdigestAuthMiddleware
 from FroniusTimeOfUse import FroniusTimeOfUseContainer, FroniusScheduleTypeEnum, WorkdayEnum
-from typing import List
-
 
 async def main():
     url = "http://192.168.178.180"
     username = "customer"
-    password = "xxx#"
+    password = "#"
     
     # Create the middleware with your credentials
     digest_auth = XdigestAuthMiddleware(login=username, password=password)

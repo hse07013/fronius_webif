@@ -2,7 +2,7 @@ import json
 import datetime as dt
 from attr import dataclass
 from enum import StrEnum, IntFlag, auto
-from typing import List
+from typing import Optional
 
 
 class StrUpperEnum(StrEnum):
@@ -44,7 +44,7 @@ class FroniusTimeOfUseContainer:
 
     _timeofuse : list[TimeOfUse] = []
 
-    def __init__(self, parseFronius: [dict|None] = None):
+    def __init__(self, parseFronius: Optional[dict] = None):
         """Initializes the manager with an optional parsed Fronius configuration."""
         _timeofuse = []
         if parseFronius is not None:
@@ -134,8 +134,8 @@ class FroniusTimeOfUseContainer:
        
 
     def removeEntry(self, schedule_type: FroniusScheduleTypeEnum, workdays: WorkdayEnum,
-                              startTime: dt.time, endTime: dt.time) -> (int, List[TimeOfUse]):
-        collectedRemove : List[FroniusTimeOfUseContainer.TimeOfUse] = []
+                              startTime: dt.time, endTime: dt.time) -> tuple[int, list[TimeOfUse]]:
+        collectedRemove : list[FroniusTimeOfUseContainer.TimeOfUse] = []
         for existing in self._timeofuse:
             dummyTimeOfUse = self.TimeOfUse(ScheduleType=schedule_type, Workdays=workdays, Start=startTime, End=endTime)
             if self.overlapsWithExistingEntry(dummyTimeOfUse):
@@ -155,7 +155,7 @@ class FroniusTimeOfUseContainer:
         self._timeofuse.append(entry)
 
 
-    def addOrReplaceEntry(self, entry: TimeOfUse) -> (int, List[TimeOfUse]):
+    def addOrReplaceEntry(self, entry: TimeOfUse) -> tuple[int, list[TimeOfUse]]:
         """Adds a new time of use entry, replacing any existing entries that overlap with it.
            Returns the number of entries that were removed to accommodate the new entry."""
         
@@ -173,7 +173,7 @@ class FroniusTimeOfUseContainer:
         return rm_ret  # Return the number of entries that were removed
 
 
-    def getTimeOfUseCopy(self, timeOfUseOverlap: [TimeOfUse|None] = None) -> list[TimeOfUse]:
+    def getTimeOfUseCopy(self, timeOfUseOverlap: Optional[TimeOfUse] = None) -> list[TimeOfUse]:
         """Returns a list of the current time of use entries."""
         if timeOfUseOverlap is not None:
             return [entry for entry in self._timeofuse if self.overlapsTimeOfUse(entry, timeOfUseOverlap)]
